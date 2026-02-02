@@ -1,0 +1,10 @@
+{
+  "name": "riscv-online-editor",
+  "version": "0.1.0",
+  "description": "RV32I 本地在线编辑器 Demo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-toolchain": "node scripts/check-toolchain.js"
+  }
+}

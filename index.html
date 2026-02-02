@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RV32I 在线编辑器 Demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>RV32I 在线编辑器 Demo</h1>
+    <div class="toolbar">
+      <span>模式：内置汇编器 + 内置简易 C</span>
+      <button id="btnAssemble">汇编 / 编译</button>
+      <button id="btnCompileC">C → 汇编</button>
+      <span id="status"></span>
+    </div>
+  </header>
+  <main>
+    <section class="panel c-panel">
+      <h2>C 源代码（简易子集，编译为 RV32I 汇编）</h2>
+      <div class="c-editor-options">
+        <label><input type="checkbox" id="cAutoComplete" checked> 自动补全</label>
+        <label>Tab 宽度：<select id="cTabSize"><option value="2">2 格</option><option value="4" selected>4 格</option><option value="8">8 格</option></select></label>
+      </div>
+      <textarea id="cSource" spellcheck="false" placeholder="示例：
+int main() {
+  int x = 1;
+  x += 2;
+  return x;
+}"></textarea>
+    </section>
+    <section class="panel editor-panel">
+      <h2>汇编源码 <span class="hint">（点击行首圆点设置/取消断点）</span></h2>
+      <div class="asm-editor-options">
+        <label>Tab 宽度：<select id="asmTabSize"><option value="2">2 格</option><option value="4" selected>4 格</option><option value="8">8 格</option></select></label>
+      </div>
+      <div class="editor-wrap">
+        <div id="sourceGutter" class="editor-gutter"></div>
+        <textarea id="source" spellcheck="false">.text
+.globl _start
+_start:
+  addi a0, x0, 1
+  addi a1, x0, 2
+  add  a0, a0, a1
+  addi a7, x0, 93
+  ecall
+</textarea>
+      </div>
+    </section>
+    <section class="panel output-panel">
+      <h2>机器码 / 反汇编</h2>
+      <div id="machineCode" class="machine-code-wrap"></div>
+    </section>
+    <section class="panel exec-panel">
+      <h2>执行</h2>
+      <div class="exec-toolbar">
+        <button id="btnLoad">加载到模拟器</button>
+        <button id="btnStep">单步</button>
+        <button id="btnRun">连续</button>
+        <button id="btnStop">停止</button>
+        <button id="btnReset">重置</button>
+        <label>数据区 (KB，1–1024): <input type="number" id="dataSizeKB" min="1" max="1024" value="64" style="width:4em"></label>
+      </div>
+      <div class="regs-grid">
+        <h3>寄存器</h3>
+        <div id="regs" class="regs-table"></div>
+      </div>
+      <div class="pc-line">PC: <code id="pcVal">0x00000000</code></div>
+      <div class="data-memory-panel">
+        <h3>数据区内存 (0x80000000 起，按字)</h3>
+        <div id="dataMemory" class="data-memory-table"></div>
+      </div>
+    </section>
+  </main>
+  <script src="assembler.js"></script>
+  <script src="simulator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
