@@ -9,6 +9,18 @@
     status: document.getElementById('status'),
     btnAssemble: document.getElementById('btnAssemble'),
     btnCompileC: document.getElementById('btnCompileC'),
+    cIoMode: document.getElementById('cIoMode'),
+    cIoName: document.getElementById('cIoName'),
+    asmIoMode: document.getElementById('asmIoMode'),
+    asmIoName: document.getElementById('asmIoName'),
+    outIoMode: document.getElementById('outIoMode'),
+    outIoName: document.getElementById('outIoName'),
+    btnCLoadTxt: document.getElementById('btnCLoadTxt'),
+    btnCSaveTxt: document.getElementById('btnCSaveTxt'),
+    btnAsmLoadTxt: document.getElementById('btnAsmLoadTxt'),
+    btnAsmSaveTxt: document.getElementById('btnAsmSaveTxt'),
+    btnOutLoadTxt: document.getElementById('btnOutLoadTxt'),
+    btnOutSaveTxt: document.getElementById('btnOutSaveTxt'),
     btnLoad: document.getElementById('btnLoad'),
     btnStep: document.getElementById('btnStep'),
     btnRun: document.getElementById('btnRun'),
@@ -19,6 +31,17 @@
     dataSizeKB: document.getElementById('dataSizeKB'),
     dataMemory: document.getElementById('dataMemory'),
     sourceGutter: document.getElementById('sourceGutter'),
+    cloudSidebar: document.getElementById('cloudSidebar'),
+    cloudBody: document.getElementById('cloudBody'),
+    cloudFiles: document.getElementById('cloudFiles'),
+    btnCloudToggle: document.getElementById('btnCloudToggle'),
+    btnCloudRefresh: document.getElementById('btnCloudRefresh'),
+    btnCloudNew: document.getElementById('btnCloudNew'),
+    cloudModal: document.getElementById('cloudModal'),
+    cloudModalName: document.getElementById('cloudModalName'),
+    cloudModalText: document.getElementById('cloudModalText'),
+    btnCloudModalClose: document.getElementById('btnCloudModalClose'),
+    btnCloudModalSave: document.getElementById('btnCloudModalSave'),
   };
 
   let lastMachineCode = [];
@@ -32,6 +55,207 @@
   function setStatus(msg, isErr) {
     el.status.textContent = msg;
     el.status.classList.toggle('err', !!isErr);
+  }
+
+  function downloadText(filename, text) {
+    const blob = new Blob([text == null ? '' : String(text)], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 250);
+  }
+
+  async function saveLocalTextWithPicker(filename, text) {
+    // Prefer native save dialog (File System Access API) when available.
+    const anyWin = window;
+    if (anyWin && typeof anyWin.showSaveFilePicker === 'function') {
+      const suggestedName = filename || 'download.txt';
+      const handle = await anyWin.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: 'Text',
+          accept: { 'text/plain': ['.txt', '.c', '.h', '.s', '.asm', '.json'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([text == null ? '' : String(text)], { type: 'text/plain;charset=utf-8' }));
+      await writable.close();
+      return { ok: true, method: 'picker' };
+    }
+    // Fallback: browser download (may land in Downloads).
+    downloadText(filename, text);
+    return { ok: true, method: 'download' };
+  }
+
+  function pickLocalTextFile(accept) {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = accept || '.txt,.c,.s,.asm,.h';
+      input.addEventListener('change', () => {
+        const f = input.files && input.files[0];
+        if (!f) { reject(new Error('未选择文件')); return; }
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: f.name, text: String(reader.result || '') });
+        reader.onerror = () => reject(new Error('读取文件失败'));
+        reader.readAsText(f, 'utf-8');
+      });
+      input.click();
+    });
+  }
+
+  async function localhostLoad(name) {
+    const res = await fetch('/api/file?name=' + encodeURIComponent(name || ''));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return String(data.text || '');
+  }
+
+  async function localhostSave(name, text) {
+    const res = await fetch('/api/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || '', text: text == null ? '' : String(text) })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return data;
+  }
+
+  async function localhostListFiles() {
+    const res = await fetch('/api/files');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return Array.isArray(data.files) ? data.files : [];
+  }
+
+  async function localhostCreateFile(name, text) {
+    const res = await fetch('/api/files/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || '', text: text == null ? '' : String(text) })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return data;
+  }
+
+  async function localhostDeleteFile(name) {
+    const res = await fetch('/api/files/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || '' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return data;
+  }
+
+  async function localhostRenameFile(from, to) {
+    const res = await fetch('/api/files/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: from || '', to: to || '' })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+    return data;
+  }
+
+  function formatBytes(n) {
+    const x = Number(n);
+    if (!isFinite(x)) return '';
+    if (x < 1024) return x + ' B';
+    if (x < 1024 * 1024) return (x / 1024).toFixed(1) + ' KB';
+    return (x / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function guessTargetForName(name) {
+    const n = String(name || '').toLowerCase();
+    if (n.includes('c-') || n.endsWith('.c.txt') || n.endsWith('.c')) return 'c';
+    if (n.includes('asm') || n.endsWith('.s.txt') || n.endsWith('.s') || n.endsWith('.asm.txt')) return 'asm';
+    if (n.includes('machine') || n.includes('disasm') || n.includes('out')) return 'out';
+    return 'asm';
+  }
+
+  let cloudEditingName = null;
+  function openCloudModal(name, text) {
+    cloudEditingName = name || '';
+    if (el.cloudModalName) el.cloudModalName.textContent = cloudEditingName;
+    if (el.cloudModalText) el.cloudModalText.value = text == null ? '' : String(text);
+    if (el.cloudModal) el.cloudModal.classList.remove('hidden');
+    if (el.cloudModalText) el.cloudModalText.focus();
+  }
+  function closeCloudModal() {
+    if (el.cloudModal) el.cloudModal.classList.add('hidden');
+    cloudEditingName = null;
+  }
+
+  function renderCloudFiles(files) {
+    if (!el.cloudFiles) return;
+    if (!files || !files.length) {
+      el.cloudFiles.innerHTML = '<div class="cloud-hint">(暂无 txt)</div>';
+      return;
+    }
+    el.cloudFiles.innerHTML = files.map((f) => {
+      const name = escapeHtml(f.name || '');
+      const meta = (f.size != null ? formatBytes(f.size) : '') + (f.mtimeMs ? (' · ' + new Date(f.mtimeMs).toLocaleString()) : '');
+      return (
+        '<div class="cloud-file" data-name="' + name + '">' +
+          '<div class="cloud-file-top">' +
+            '<div class="cloud-file-name" title="' + name + '">' + name + '</div>' +
+          '</div>' +
+          '<div class="cloud-file-actions">' +
+            '<button class="btn-secondary btn-tiny cloud-edit">编辑</button>' +
+            '<button class="btn-secondary btn-tiny cloud-rename">重命名</button>' +
+            '<button class="btn-secondary btn-tiny cloud-delete">删除</button>' +
+          '</div>' +
+          (meta ? '<div class="cloud-file-meta">' + escapeHtml(meta) + '</div>' : '') +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  async function refreshCloudFiles() {
+    try {
+      const files = await localhostListFiles();
+      renderCloudFiles(files);
+      return files;
+    } catch (e) {
+      setStatus('刷新云端文件失败：' + (e.message || String(e)), true);
+      return [];
+    }
+  }
+
+  async function cloudEdit(name) {
+    const text = await localhostLoad(name);
+    openCloudModal(name, text);
+    setStatus('已打开编辑窗口：' + name);
+  }
+
+  function buildMachineDisasmText() {
+    const bytes = Array.isArray(lastMachineCode) ? lastMachineCode : [];
+    const lines = Array.isArray(lastDisasm) ? lastDisasm : [];
+    if (!bytes.length) return '';
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 4) {
+      const addr = (BASE_CODE + i) >>> 0;
+      const word = (bytes[i] & 0xff) | ((bytes[i + 1] & 0xff) << 8) | ((bytes[i + 2] & 0xff) << 16) | ((bytes[i + 3] & 0xff) << 24);
+      const hexStr = ('00000000' + (word >>> 0).toString(16)).slice(-8);
+      const asm = (lines[i / 4] != null && lines[i / 4] !== '(内置汇编)') ? lines[i / 4] : disasmOne(bytes, i);
+      out += formatHex4(addr) + '\t' + hexStr + '\t' + (asm || '') + '\n';
+    }
+    return out;
+  }
+
+  function renderOutputText(text) {
+    if (!el.machineCode) return;
+    const safe = escapeHtml(text || '');
+    el.machineCode.innerHTML = '<pre class="machine-code-pre">' + safe + '</pre>';
   }
 
   function formatHex4(n) {
@@ -1042,6 +1266,197 @@
   if (el.btnCompileC) {
     el.btnCompileC.addEventListener('click', compileSimpleC);
   }
+
+  async function handleLoadInto(target) {
+    try {
+      if (target === 'c') {
+        const mode = (el.cIoMode && el.cIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          const name = (el.cIoName && el.cIoName.value) || 'c-source.txt';
+          el.cSource.value = await localhostLoad(name);
+          setStatus('已从 localhost 加载到 C 源代码：' + name);
+          return;
+        }
+        const f = await pickLocalTextFile('.txt,.c,.h');
+        if (el.cIoName) el.cIoName.value = f.name;
+        el.cSource.value = f.text;
+        setStatus('已从本地加载到 C 源代码：' + f.name);
+        return;
+      }
+      if (target === 'asm') {
+        const mode = (el.asmIoMode && el.asmIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          const name = (el.asmIoName && el.asmIoName.value) || 'asm-source.txt';
+          el.source.value = await localhostLoad(name);
+          renderGutter();
+          setStatus('已从 localhost 加载到汇编源码：' + name);
+          return;
+        }
+        const f = await pickLocalTextFile('.txt,.s,.asm');
+        if (el.asmIoName) el.asmIoName.value = f.name;
+        el.source.value = f.text;
+        renderGutter();
+        setStatus('已从本地加载到汇编源码：' + f.name);
+        return;
+      }
+      if (target === 'out') {
+        const mode = (el.outIoMode && el.outIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          const name = (el.outIoName && el.outIoName.value) || 'machine-disasm.txt';
+          const text = await localhostLoad(name);
+          renderOutputText(text);
+          setStatus('已从 localhost 加载到输出窗口：' + name);
+          return;
+        }
+        const f = await pickLocalTextFile('.txt');
+        if (el.outIoName) el.outIoName.value = f.name;
+        renderOutputText(f.text);
+        setStatus('已从本地加载到输出窗口：' + f.name);
+        return;
+      }
+    } catch (e) {
+      setStatus('加载失败：' + (e.message || String(e)), true);
+    }
+  }
+
+  async function handleSaveFrom(target) {
+    try {
+      if (target === 'c') {
+        const text = (el.cSource && el.cSource.value) || '';
+        const name = (el.cIoName && el.cIoName.value) || 'c-source.txt';
+        const mode = (el.cIoMode && el.cIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          await localhostSave(name, text);
+          setStatus('已保存到 localhost：' + name);
+          return;
+        }
+        const r = await saveLocalTextWithPicker(name, text);
+        setStatus(r.method === 'picker' ? ('已保存到本地文件：' + name) : ('已保存为下载：' + name));
+        return;
+      }
+      if (target === 'asm') {
+        const text = (el.source && el.source.value) || '';
+        const name = (el.asmIoName && el.asmIoName.value) || 'asm-source.txt';
+        const mode = (el.asmIoMode && el.asmIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          await localhostSave(name, text);
+          setStatus('已保存到 localhost：' + name);
+          return;
+        }
+        const r = await saveLocalTextWithPicker(name, text);
+        setStatus(r.method === 'picker' ? ('已保存到本地文件：' + name) : ('已保存为下载：' + name));
+        return;
+      }
+      if (target === 'out') {
+        const text = buildMachineDisasmText();
+        const name = (el.outIoName && el.outIoName.value) || 'machine-disasm.txt';
+        const mode = (el.outIoMode && el.outIoMode.value) || 'local';
+        if (mode === 'localhost') {
+          await localhostSave(name, text);
+          setStatus('已保存到 localhost：' + name);
+          return;
+        }
+        const r = await saveLocalTextWithPicker(name, text);
+        setStatus(r.method === 'picker' ? ('已保存到本地文件：' + name) : ('已保存为下载：' + name));
+        return;
+      }
+    } catch (e) {
+      setStatus('保存失败：' + (e.message || String(e)), true);
+    }
+  }
+
+  if (el.btnCLoadTxt) el.btnCLoadTxt.addEventListener('click', () => handleLoadInto('c'));
+  if (el.btnCSaveTxt) el.btnCSaveTxt.addEventListener('click', () => handleSaveFrom('c'));
+  if (el.btnAsmLoadTxt) el.btnAsmLoadTxt.addEventListener('click', () => handleLoadInto('asm'));
+  if (el.btnAsmSaveTxt) el.btnAsmSaveTxt.addEventListener('click', () => handleSaveFrom('asm'));
+  if (el.btnOutLoadTxt) el.btnOutLoadTxt.addEventListener('click', () => handleLoadInto('out'));
+  if (el.btnOutSaveTxt) el.btnOutSaveTxt.addEventListener('click', () => handleSaveFrom('out'));
+
+  if (el.btnCloudToggle && el.cloudSidebar) {
+    el.btnCloudToggle.addEventListener('click', () => {
+      el.cloudSidebar.classList.toggle('collapsed');
+    });
+  }
+  if (el.btnCloudRefresh) el.btnCloudRefresh.addEventListener('click', refreshCloudFiles);
+  if (el.btnCloudNew) {
+    el.btnCloudNew.addEventListener('click', async () => {
+      try {
+        const name = prompt('新建 txt 文件名（会自动补 .txt）：', 'new-file.txt');
+        if (!name) return;
+        await localhostCreateFile(name, '');
+        setStatus('已新建云端文件：' + name);
+        await refreshCloudFiles();
+      } catch (e) {
+        setStatus('新建失败：' + (e.message || String(e)), true);
+      }
+    });
+  }
+  if (el.cloudFiles) {
+    el.cloudFiles.addEventListener('click', async (ev) => {
+      const root = ev.target.closest('.cloud-file[data-name]');
+      if (!root) return;
+      const name = root.getAttribute('data-name');
+      try {
+        if (ev.target.classList.contains('cloud-edit')) {
+          await cloudEdit(name);
+          return;
+        }
+        if (ev.target.classList.contains('cloud-delete')) {
+          if (!confirm('确认删除云端文件：' + name + ' ?')) return;
+          await localhostDeleteFile(name);
+          setStatus('已删除云端文件：' + name);
+          await refreshCloudFiles();
+          return;
+        }
+        if (ev.target.classList.contains('cloud-rename')) {
+          const to = prompt('重命名为：', name);
+          if (!to || to === name) return;
+          await localhostRenameFile(name, to);
+          setStatus('已重命名：' + name + ' → ' + to);
+          await refreshCloudFiles();
+          return;
+        }
+      } catch (e) {
+        setStatus('操作失败：' + (e.message || String(e)), true);
+      }
+    });
+  }
+
+  if (el.cloudModal) {
+    el.cloudModal.addEventListener('click', (ev) => {
+      if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-close') === '1') {
+        closeCloudModal();
+      }
+    });
+  }
+  if (el.btnCloudModalClose) el.btnCloudModalClose.addEventListener('click', closeCloudModal);
+  if (el.btnCloudModalSave) {
+    el.btnCloudModalSave.addEventListener('click', async () => {
+      try {
+        if (!cloudEditingName) { setStatus('未选择要保存的文件', true); return; }
+        const text = (el.cloudModalText && el.cloudModalText.value) || '';
+        await localhostSave(cloudEditingName, text);
+        setStatus('已保存：' + cloudEditingName);
+        closeCloudModal();
+        await refreshCloudFiles();
+      } catch (e) {
+        setStatus('保存失败：' + (e.message || String(e)), true);
+      }
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && el.cloudModal && !el.cloudModal.classList.contains('hidden')) {
+      closeCloudModal();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && el.cloudModal && !el.cloudModal.classList.contains('hidden')) {
+      e.preventDefault();
+      if (el.btnCloudModalSave) el.btnCloudModalSave.click();
+    }
+  });
+
+  // 初始加载云端文件列表
+  if (el.cloudFiles) refreshCloudFiles();
+
   el.btnLoad.addEventListener('click', loadSimulator);
   el.btnStep.addEventListener('click', step);
   el.btnRun.addEventListener('click', run);

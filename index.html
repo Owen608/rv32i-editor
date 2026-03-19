@@ -16,9 +16,34 @@
       <span id="status"></span>
     </div>
   </header>
-  <main>
+  <div class="app-shell">
+    <aside id="cloudSidebar" class="cloud-sidebar">
+      <div class="cloud-head">
+        <button id="btnCloudToggle" class="btn-secondary cloud-toggle" title="折叠/展开">文件</button>
+        <div class="cloud-head-actions">
+          <button id="btnCloudRefresh" class="btn-secondary" title="刷新列表">刷新</button>
+          <button id="btnCloudNew" class="btn-secondary" title="新建 txt">新建</button>
+        </div>
+      </div>
+      <div id="cloudBody" class="cloud-body">
+        <div class="cloud-hint">云端文件（localhost → storage/）</div>
+        <div id="cloudFiles" class="cloud-files"></div>
+      </div>
+    </aside>
+    <main>
     <section class="panel c-panel">
-      <h2>C 源代码（简易子集，编译为 RV32I 汇编）</h2>
+      <div class="panel-head">
+        <h2>C 源代码（简易子集，编译为 RV32I 汇编）</h2>
+        <div class="panel-actions">
+          <select id="cIoMode" class="io-mode" title="加载/保存来源">
+            <option value="local" selected>本地</option>
+            <option value="localhost">localhost</option>
+          </select>
+          <input id="cIoName" class="io-name" placeholder="文件名（如 demo.c.txt）" value="c-source.txt" />
+          <button id="btnCLoadTxt" class="btn-secondary">加载 TXT</button>
+          <button id="btnCSaveTxt" class="btn-secondary">保存 TXT</button>
+        </div>
+      </div>
       <div class="c-editor-options">
         <label><input type="checkbox" id="cAutoComplete" checked> 自动补全</label>
         <label>Tab 宽度：<select id="cTabSize"><option value="2">2 格</option><option value="4" selected>4 格</option><option value="8">8 格</option></select></label>
@@ -31,7 +56,18 @@ int main() {
 }"></textarea>
     </section>
     <section class="panel editor-panel">
-      <h2>汇编源码 <span class="hint">（点击行首圆点设置/取消断点）</span></h2>
+      <div class="panel-head">
+        <h2>汇编源码 <span class="hint">（点击行首圆点设置/取消断点）</span></h2>
+        <div class="panel-actions">
+          <select id="asmIoMode" class="io-mode" title="加载/保存来源">
+            <option value="local" selected>本地</option>
+            <option value="localhost">localhost</option>
+          </select>
+          <input id="asmIoName" class="io-name" placeholder="文件名（如 demo.s.txt）" value="asm-source.txt" />
+          <button id="btnAsmLoadTxt" class="btn-secondary">加载 TXT</button>
+          <button id="btnAsmSaveTxt" class="btn-secondary">保存 TXT</button>
+        </div>
+      </div>
       <div class="asm-editor-options">
         <label>Tab 宽度：<select id="asmTabSize"><option value="2">2 格</option><option value="4" selected>4 格</option><option value="8">8 格</option></select></label>
       </div>
@@ -49,7 +85,18 @@ _start:
       </div>
     </section>
     <section class="panel output-panel">
-      <h2>机器码 / 反汇编</h2>
+      <div class="panel-head">
+        <h2>机器码 / 反汇编</h2>
+        <div class="panel-actions">
+          <select id="outIoMode" class="io-mode" title="加载/保存来源">
+            <option value="local" selected>本地</option>
+            <option value="localhost">localhost</option>
+          </select>
+          <input id="outIoName" class="io-name" placeholder="文件名（如 out.txt）" value="machine-disasm.txt" />
+          <button id="btnOutLoadTxt" class="btn-secondary">加载 TXT</button>
+          <button id="btnOutSaveTxt" class="btn-secondary">保存 TXT</button>
+        </div>
+      </div>
       <div id="machineCode" class="machine-code-wrap"></div>
     </section>
     <section class="panel exec-panel">
@@ -72,7 +119,21 @@ _start:
         <div id="dataMemory" class="data-memory-table"></div>
       </div>
     </section>
-  </main>
+    </main>
+  </div>
+  <div id="cloudModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <div class="modal-title">编辑：<span id="cloudModalName"></span></div>
+        <button id="btnCloudModalClose" class="btn-secondary" title="关闭">关闭</button>
+      </div>
+      <textarea id="cloudModalText" class="modal-text" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button id="btnCloudModalSave" class="btn-secondary">保存到云端</button>
+      </div>
+    </div>
+  </div>
   <script src="assembler.js"></script>
   <script src="simulator.js"></script>
   <script src="app.js"></script>

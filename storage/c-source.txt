@@ -1,0 +1,8 @@
+int main() {
+  int a = 10, b = 3, c = 0;
+  c = a + b;
+  c = c * 2;
+  c = c - 5;
+  c = c ^ 7;
+  return c;
+}
