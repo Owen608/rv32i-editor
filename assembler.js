@@ -94,10 +94,11 @@
       if (m.startsWith('.')) continue;
       const parts = rawParts.slice(1).map(function (s) { return s.replace(/,/g, '').trim(); }).filter(Boolean);
       let size = 4;
-      if (m === 'li' && parts[1]) {
+      if ((m === 'li' || m === 'la') && parts[1]) {
         const v = parseImm(parts[1]);
-        const v32 = v !== null ? v >>> 0 : 0;
-        if (v !== null && (v < -2048 || v > 2047) && (v32 & 0xfff) !== 0) size = 8;
+        const v2 = v !== null ? v : (labels[parts[1]] !== undefined ? (labels[parts[1]] | 0) : null);
+        const v32 = v2 !== null ? (v2 >>> 0) : 0;
+        if (v2 !== null && (v2 < -2048 || v2 > 2047) && (v32 & 0xfff) !== 0) size = 8;
       }
       insList.push({ pc, mnemonic: m, args: parts, lineNum: i + 1 });
       pc += size;
@@ -114,6 +115,7 @@
         const rs2 = args[2] !== undefined ? reg(args[2]) : -1;
         const imm = parseImm(args[args.length - 1] || '');
         const resolveLabel = (name) => labels[name] !== undefined ? labels[name] - addr : null;
+        const resolveAbsLabel = (name) => labels[name] !== undefined ? (labels[name] | 0) : null;
 
         let bytes = null;
         switch (mnemonic) {
@@ -323,6 +325,31 @@
             if (imm !== null && imm >= -2048 && imm <= 2047) bytes = encodeI(0x13, rd, 0, imm, 0);
             else if (imm !== null) {
               const imm32 = imm >>> 0;
+              const lo12 = imm32 & 0xfff;
+              const loSgn = lo12 >= 0x800 ? lo12 - 0x1000 : lo12;
+              const hi = ((imm32 - loSgn) >>> 0) & 0xfffff000;
+              output.push(...encodeU(0x37, rd, hi));
+              addr += 4;
+              if (lo12 !== 0) {
+                output.push(...encodeI(0x13, rd, rd, loSgn, 0));
+                addr += 4;
+              }
+            }
+            break;
+          }
+          case 'la': {
+            // la rd, imm/label
+            // - imm can be 0x80000000 style absolute address
+            // - label resolves to absolute PC address within .text (demo convenience)
+            const v = (args[1] !== undefined && parseImm(args[1]) !== null) ? parseImm(args[1]) : resolveAbsLabel(args[1]);
+            if (v === null) {
+              errors.push(`第 ${lineNum} 行: la 需要立即数或可解析标签`);
+              break;
+            }
+            if (v >= -2048 && v <= 2047) {
+              bytes = encodeI(0x13, rd, 0, v, 0);
+            } else {
+              const imm32 = (v >>> 0);
               const lo12 = imm32 & 0xfff;
               const loSgn = lo12 >= 0x800 ? lo12 - 0x1000 : lo12;
               const hi = ((imm32 - loSgn) >>> 0) & 0xfffff000;

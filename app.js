@@ -31,6 +31,11 @@
     dataSizeKB: document.getElementById('dataSizeKB'),
     dataMemory: document.getElementById('dataMemory'),
     sourceGutter: document.getElementById('sourceGutter'),
+    stdinArea: document.getElementById('stdinArea'),
+    stdoutArea: document.getElementById('stdoutArea'),
+    btnSendStdin: document.getElementById('btnSendStdin'),
+    btnClearStdout: document.getElementById('btnClearStdout'),
+    ioState: document.getElementById('ioState'),
     cloudSidebar: document.getElementById('cloudSidebar'),
     cloudBody: document.getElementById('cloudBody'),
     cloudFiles: document.getElementById('cloudFiles'),
@@ -1070,6 +1075,29 @@
     }
   }
 
+  function updateIOUI(lastStepResult) {
+    if (!simulator) return;
+    if (el.stdoutArea && typeof simulator.drainStdout === 'function') {
+      var out = simulator.drainStdout();
+      if (out) {
+        el.stdoutArea.value = (el.stdoutArea.value || '') + out;
+        el.stdoutArea.scrollTop = el.stdoutArea.scrollHeight;
+      }
+    }
+    if (el.ioState && typeof simulator.getIOState === 'function') {
+      var s = simulator.getIOState();
+      var kindMap = { readInt: 'readInt(a7=1)', readChar: 'readChar(a7=3)', readString: 'readString(a7=5)' };
+      var w = s.waiting ? ('等待输入：' + (kindMap[s.waiting.kind] || s.waiting.kind)) : '运行就绪';
+      el.ioState.textContent = w + ' | ints=' + s.stdinInts + ' bytes=' + s.stdinBytes;
+    }
+    if (lastStepResult && lastStepResult.waiting) {
+      // pause running controls when waiting
+      if (el.btnRun) el.btnRun.disabled = false;
+      if (el.btnStep) el.btnStep.disabled = false;
+      if (el.btnStop) el.btnStop.disabled = true;
+    }
+  }
+
   function step() {
     if (!simulator) {
       setStatus('请先点击「加载到模拟器」', true);
@@ -1077,7 +1105,10 @@
     }
     var r = simulator.step();
     updateRegsAndPC();
+    updateIOUI(r);
     if (r && r.done) setStatus('执行结束 (ecall exit)');
+    if (r && r.trap) setStatus('Trap: ' + (r.error || 'unknown'), true);
+    if (r && r.waiting) setStatus('等待输入：' + r.kind, true);
   }
 
   function run() {
@@ -1097,12 +1128,29 @@
       if (simulator.breakpoints.has(simulator.pc)) {
         const r = simulator.step();
         updateRegsAndPC();
+        updateIOUI(r);
         if (r && r.done) {
           simulator.running = false;
           el.btnRun.disabled = false;
           el.btnStep.disabled = false;
           el.btnStop.disabled = true;
           setStatus('执行结束');
+          return;
+        }
+        if (r && r.waiting) {
+          simulator.running = false;
+          el.btnRun.disabled = false;
+          el.btnStep.disabled = false;
+          el.btnStop.disabled = true;
+          setStatus('等待输入：' + r.kind, true);
+          return;
+        }
+        if (r && r.trap) {
+          simulator.running = false;
+          el.btnRun.disabled = false;
+          el.btnStep.disabled = false;
+          el.btnStop.disabled = true;
+          setStatus('Trap: ' + (r.error || 'unknown'), true);
           return;
         }
         if (simulator.breakpoints.has(simulator.pc)) {
@@ -1119,12 +1167,29 @@
       }
       const r = simulator.step();
       updateRegsAndPC();
+      updateIOUI(r);
       if (r && r.done) {
         simulator.running = false;
         el.btnRun.disabled = false;
         el.btnStep.disabled = false;
         el.btnStop.disabled = true;
         setStatus('执行结束');
+        return;
+      }
+      if (r && r.waiting) {
+        simulator.running = false;
+        el.btnRun.disabled = false;
+        el.btnStep.disabled = false;
+        el.btnStop.disabled = true;
+        setStatus('等待输入：' + r.kind, true);
+        return;
+      }
+      if (r && r.trap) {
+        simulator.running = false;
+        el.btnRun.disabled = false;
+        el.btnStep.disabled = false;
+        el.btnStop.disabled = true;
+        setStatus('Trap: ' + (r.error || 'unknown'), true);
         return;
       }
       if (simulator.breakpoints.has(simulator.pc)) {
@@ -1160,8 +1225,70 @@
       simulator.load(lastMachineCode, dataKB, Array.from(breakpointAddrs));
       simulator.setDisasm(lastDisasm);
       updateRegsAndPC();
+      updateIOUI();
       setStatus('已重置');
     }
+  }
+
+  function isIntToken(tok) {
+    return /^-?\d+$/.test(tok);
+  }
+
+  function sendSmartStdin() {
+    if (!simulator) { setStatus('请先加载到模拟器', true); return; }
+    var raw = (el.stdinArea && el.stdinArea.value) ? String(el.stdinArea.value) : '';
+    if (!raw.trim()) { setStatus('没有可发送的输入', true); return; }
+
+    var ints = [];
+    var bytes = [];
+
+    var lines = raw.split(/\r?\n/);
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      if (line == null) continue;
+      var rawLine = String(line);
+      var trimmed = rawLine.trim();
+      if (!trimmed) continue;
+
+      // Decide per-line mode:
+      // - If the whole line can be tokenized into only (ints / single-char / \0), use token mode.
+      // - Otherwise treat the whole line (including spaces) as one string and append '\0'.
+      var tokens = trimmed.split(/\s+/).filter(Boolean);
+      var tokenMode = tokens.length > 0;
+      for (var ti = 0; ti < tokens.length; ti++) {
+        var t = tokens[ti];
+        if (isIntToken(t)) continue;
+        if (t.length === 1) continue;
+        if (t === '\\0' || t === '\\x00') continue;
+        tokenMode = false;
+        break;
+      }
+
+      if (tokenMode) {
+        for (var ti2 = 0; ti2 < tokens.length; ti2++) {
+          var t2 = tokens[ti2];
+          if (isIntToken(t2)) ints.push(parseInt(t2, 10) | 0);
+          else if (t2.length === 1) bytes.push(t2.charCodeAt(0) & 0xff);
+          else if (t2 === '\\0' || t2 === '\\x00') bytes.push(0);
+        }
+        continue;
+      }
+
+      // string line (preserve original line content except trailing newline)
+      for (var si = 0; si < rawLine.length; si++) bytes.push(rawLine.charCodeAt(si) & 0xff);
+      bytes.push(0);
+    }
+
+    if (ints.length && typeof simulator.pushInputInts === 'function') simulator.pushInputInts(ints);
+    if (bytes.length && typeof simulator.pushInputBytes === 'function') simulator.pushInputBytes(bytes);
+    updateIOUI();
+    setStatus('已发送输入：ints=' + ints.length + '，bytes=' + bytes.length);
+  }
+
+  function clearStdout() {
+    if (el.stdoutArea) el.stdoutArea.value = '';
+    if (simulator && typeof simulator.drainStdout === 'function') simulator.drainStdout();
+    updateIOUI();
   }
 
   function setupEditor(ta, options) {
@@ -1462,4 +1589,6 @@
   el.btnRun.addEventListener('click', run);
   el.btnStop.addEventListener('click', stop);
   el.btnReset.addEventListener('click', reset);
+  if (el.btnSendStdin) el.btnSendStdin.addEventListener('click', sendSmartStdin);
+  if (el.btnClearStdout) el.btnClearStdout.addEventListener('click', clearStdout);
 })();

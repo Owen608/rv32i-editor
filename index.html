@@ -109,6 +109,23 @@ _start:
         <button id="btnReset">重置</button>
         <label>数据区 (KB，1–1024): <input type="number" id="dataSizeKB" min="1" max="1024" value="64" style="width:4em"></label>
       </div>
+      <div class="io-panel">
+        <div class="io-col">
+          <h3>输入 (stdin)</h3>
+          <div class="io-actions">
+            <button id="btnSendStdin" class="btn-secondary btn-tiny" title="智能识别并发送输入">发送</button>
+            <span id="ioState" class="io-state"></span>
+          </div>
+          <textarea id="stdinArea" class="io-textarea" spellcheck="false" placeholder="整数：用空格/换行分隔，例如：1 2 3&#10;文本：直接输入字符（ASCII）"></textarea>
+        </div>
+        <div class="io-col">
+          <h3>输出 (stdout)</h3>
+          <div class="io-actions">
+            <button id="btnClearStdout" class="btn-secondary btn-tiny">清空输出</button>
+          </div>
+          <textarea id="stdoutArea" class="io-textarea" spellcheck="false" readonly placeholder="程序输出会显示在这里"></textarea>
+        </div>
+      </div>
       <div class="regs-grid">
         <h3>寄存器</h3>
         <div id="regs" class="regs-table"></div>

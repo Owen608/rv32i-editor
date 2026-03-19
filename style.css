@@ -368,6 +368,51 @@ main {
 }
 .exec-toolbar button:hover { background: #565f89; }
 .exec-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.io-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.5rem 0 0.75rem 0;
+}
+.io-col {
+  border: 1px solid #3b4261;
+  background: #1a1b26;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.io-col h3 {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid #3b4261;
+  background: #16161e;
+}
+.io-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #2a2d3a;
+}
+.io-inline { font-size: 0.85rem; color: #a9b1d6; display: inline-flex; gap: 0.35rem; align-items: center; }
+.io-state { font-size: 0.82rem; color: #565f89; }
+.io-textarea {
+  width: 100%;
+  min-height: 120px;
+  height: 160px;
+  padding: 0.65rem;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: #1a1b26;
+  color: #c0caf5;
+  font-size: 13px;
+  line-height: 1.45;
+  tab-size: 4;
+}
+@media (max-width: 900px) {
+  .io-panel { grid-template-columns: 1fr; }
+}
 .regs-table {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

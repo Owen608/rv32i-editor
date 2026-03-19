@@ -21,6 +21,11 @@
     this.baseData = BASE_DATA;
     this.codeSize = CODE_SIZE;
     this.dataSize = 64 * 1024;
+    // I/O
+    this.stdinInts = [];
+    this.stdinBytes = [];
+    this.stdout = '';
+    this.waiting = null; // { kind: 'readInt'|'readChar'|'readString', ... }
   }
 
   Simulator.prototype.load = function (machineCode, dataSizeKB, breakpoints) {
@@ -39,6 +44,42 @@
     view.fill(0);
     for (var i = 0; i < this.code.length && i < CODE_SIZE; i++) view[i] = (this.code[i] & 0xff);
     this.disasmLines = [];
+    // reset I/O
+    this.stdinInts = [];
+    this.stdinBytes = [];
+    this.stdout = '';
+    this.waiting = null;
+  };
+
+  Simulator.prototype.pushInputInts = function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var n = arr[i];
+      if (typeof n !== 'number' || !isFinite(n)) continue;
+      this.stdinInts.push((n | 0));
+    }
+  };
+
+  Simulator.prototype.pushInputBytes = function (arr) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var b = arr[i] & 0xff;
+      this.stdinBytes.push(b);
+    }
+  };
+
+  Simulator.prototype.drainStdout = function () {
+    var out = this.stdout || '';
+    this.stdout = '';
+    return out;
+  };
+
+  Simulator.prototype.getIOState = function () {
+    return {
+      waiting: this.waiting ? { kind: this.waiting.kind } : null,
+      stdinInts: this.stdinInts.length,
+      stdinBytes: this.stdinBytes.length,
+    };
   };
 
   Simulator.prototype.setBreakpoints = function (addrs) {
@@ -89,6 +130,17 @@
     return (x ^ m) - m;
   }
 
+  function appendStdout(sim, s) {
+    sim.stdout = (sim.stdout || '') + String(s);
+  }
+
+  function encodeAsciiBytes(str) {
+    var out = [];
+    var s = String(str == null ? '' : str);
+    for (var i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
+    return out;
+  }
+
   Simulator.prototype.step = function () {
     const ins = this.fetch();
     if (ins === 0 && this.pc === BASE_CODE && (this.code.length === 0 || this.code[0] === 0)) return { done: true };
@@ -109,8 +161,122 @@
     if (opcode === 0x73) {
       if ((ins >> 20) === 0) {
         const a7 = this.regs[17] | 0;
-        if (a7 === 64) { this.regs[10] = 0; }
+        const a0 = this.regs[10] | 0;
+        const a1 = this.regs[11] | 0;
+
+        // If we are already waiting on an input syscall, only that syscall may proceed.
+        if (this.waiting) {
+          if (this.waiting.kind === 'readInt' && a7 === 1) {
+            if (this.stdinInts.length === 0) return { waiting: true, kind: 'readInt' };
+            this.regs[10] = (this.stdinInts.shift() | 0);
+            this.waiting = null;
+            this.pc += 4;
+            return { pc: this.pc, ins, io: true };
+          }
+          if (this.waiting.kind === 'readChar' && a7 === 3) {
+            if (this.stdinBytes.length === 0) return { waiting: true, kind: 'readChar' };
+            this.regs[10] = (this.stdinBytes.shift() & 0xff);
+            this.waiting = null;
+            this.pc += 4;
+            return { pc: this.pc, ins, io: true };
+          }
+          if (this.waiting.kind === 'readString' && a7 === 5) {
+            // Continue filling the pending string write
+            const addr = this.waiting.addr | 0;
+            const maxLen = this.waiting.maxLen | 0;
+            let pos = this.waiting.pos | 0;
+            if (maxLen <= 0) { this.waiting = null; this.running = false; return { trap: true, error: 'readString: maxLen<=0' }; }
+            while (pos < maxLen - 1) {
+              if (this.stdinBytes.length === 0) return { waiting: true, kind: 'readString' };
+              const b = this.stdinBytes.shift() & 0xff;
+              this.write8((addr + pos) | 0, b);
+              if (b === 0) {
+                this.regs[10] = pos | 0;
+                this.waiting = null;
+                this.pc += 4;
+                return { pc: this.pc, ins, io: true };
+              }
+              pos++;
+            }
+            // Reached capacity; ensure trailing '\0'
+            this.write8((addr + pos) | 0, 0);
+            this.regs[10] = pos | 0;
+            this.waiting = null;
+            this.pc += 4;
+            return { pc: this.pc, ins, io: true };
+          }
+          // Still waiting, but different syscall encountered: pause.
+          return { waiting: true, kind: this.waiting.kind };
+        }
+
+        // Syscalls mapping:
+        // a7=1 readInt -> a0
+        // a7=2 printInt(a0)
+        // a7=3 readChar -> a0 (byte; 0 means '\0' allowed)
+        // a7=4 printChar(a0 & 0xff)
+        // a7=5 readString(a0=addr, a1=maxLen) -> a0=len (excluding '\0'), input ends with '\0'
+        // a7=6 printString(a0=addr) reads until '\0'
         if (a7 === 93) { this.running = false; return { done: true }; }
+        if (a7 === 1) {
+          if (this.stdinInts.length === 0) { this.waiting = { kind: 'readInt' }; return { waiting: true, kind: 'readInt' }; }
+          this.regs[10] = (this.stdinInts.shift() | 0);
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        if (a7 === 2) {
+          appendStdout(this, String(a0 | 0) + '\n');
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        if (a7 === 3) {
+          if (this.stdinBytes.length === 0) { this.waiting = { kind: 'readChar' }; return { waiting: true, kind: 'readChar' }; }
+          this.regs[10] = (this.stdinBytes.shift() & 0xff);
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        if (a7 === 4) {
+          appendStdout(this, String.fromCharCode(a0 & 0xff));
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        if (a7 === 5) {
+          const addr = a0 | 0;
+          const maxLen = a1 | 0;
+          if (maxLen <= 0) { this.running = false; return { trap: true, error: 'readString: maxLen<=0' }; }
+          let pos = 0;
+          while (pos < maxLen - 1) {
+            if (this.stdinBytes.length === 0) { this.waiting = { kind: 'readString', addr, maxLen, pos }; return { waiting: true, kind: 'readString' }; }
+            const b = this.stdinBytes.shift() & 0xff;
+            this.write8((addr + pos) | 0, b);
+            if (b === 0) {
+              this.regs[10] = pos | 0;
+              this.pc += 4;
+              return { pc: this.pc, ins, io: true };
+            }
+            pos++;
+          }
+          this.write8((addr + pos) | 0, 0);
+          this.regs[10] = pos | 0;
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        if (a7 === 6) {
+          const addr = a0 | 0;
+          const limit = 64 * 1024;
+          let out = '';
+          for (let i = 0; i < limit; i++) {
+            const b = this.read8((addr + i) | 0) & 0xff;
+            if (b === 0) break;
+            out += String.fromCharCode(b);
+          }
+          appendStdout(this, out);
+          this.pc += 4;
+          return { pc: this.pc, ins, io: true };
+        }
+        // Unknown ecall: stop and report
+        this.running = false;
+        appendStdout(this, '\n[trap] unknown ecall a7=' + a7 + '\n');
+        return { trap: true, error: 'unknown ecall a7=' + a7 };
       }
       this.pc += 4;
       return { pc: this.pc, ins };
